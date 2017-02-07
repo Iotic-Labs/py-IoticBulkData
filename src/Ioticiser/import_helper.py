@@ -1,4 +1,4 @@
-# Copyright (c) 2015 Iotic Labs Ltd. All rights reserved.
+# Copyright (c) 2017 Iotic Labs Ltd. All rights reserved.
 
 from importlib import import_module
 
