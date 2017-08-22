@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://github.com/Iotic-Labs/py-IoticAgent/blob/master/LICENSE
+#     https://github.com/Iotic-Labs/py-IoticBulkData/blob/master/LICENSE
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -36,16 +36,22 @@ class ResourceBase(object):
         self.__labels = {}
         if labels is not None:
             for lang in labels:
-                lang = Validation.lang_check_convert(lang, allow_none=True)
+                self.__lang_check_convert(lang)
                 self.__labels[lang] = Validation.label_check_convert(labels[lang])
         self.__descriptions = {}
         if descriptions is not None:
             for lang in descriptions:
-                lang = Validation.lang_check_convert(lang, allow_none=True)
+                self.__lang_check_convert(lang)
                 self.__descriptions[lang] = Validation.comment_check_convert(descriptions[lang])
-        self.__tags = []
-        if tags is not None:
-            self.__tags = tags
+        self.__tags = set() if tags is None else set(tags)
+
+    @classmethod
+    def __lang_check_convert(cls, lang):
+        if lang == '':
+            return None
+        if lang is None:
+            return ''
+        return Validation.lang_check_convert(lang)
 
     @property
     def lock(self):
@@ -55,6 +61,9 @@ class ResourceBase(object):
     def new(self):
         return self.__new
 
+    def _set_not_new(self):
+        self.__new = False
+
     @property
     def lid(self):
         with self.__lock:
@@ -62,8 +71,8 @@ class ResourceBase(object):
 
     def set_label(self, label, lang=None):
         with self.__lock:
-            lang = Validation.lang_check_convert(lang, allow_none=True)
-            label = Validation.label_check_convert(label, allow_none=True)
+            lang = self.__lang_check_convert(lang)
+            label = Validation.label_check_convert(label)
             if lang in self.__labels:
                 if self.__labels[lang] != label:
                     self.__labels[lang] = label
@@ -80,8 +89,8 @@ class ResourceBase(object):
 
     def set_description(self, description, lang=None):
         with self.__lock:
-            lang = Validation.lang_check_convert(lang, allow_none=True)
-            description = Validation.comment_check_convert(description, allow_none=True)
+            lang = self.__lang_check_convert(lang)
+            description = Validation.comment_check_convert(description)
             if lang in self.__descriptions:
                 if self.__descriptions[lang] != description:
                     self.__descriptions[lang] = description
@@ -98,14 +107,17 @@ class ResourceBase(object):
 
     def create_tag(self, taglist):
         with self.__lock:
-            self.__tags = Validation.tags_check_convert(taglist)  # todo: merge? Current is overwrite
-            if TAGS not in self._changes:
-                self._changes.append(TAGS)
+            taglist = set(Validation.tags_check_convert(taglist))
+            # todo: support replace rather than addition only?
+            if taglist - self.__tags:
+                if TAGS not in self._changes:
+                    self._changes.append(TAGS)
+                self.__tags |= taglist
 
     @property
     def tags(self):
         with self.__lock:
-            return self.__tags
+            return tuple(self.__tags)
 
     @property
     def changes(self):

@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://github.com/Iotic-Labs/py-IoticAgent/blob/master/LICENSE
+#     https://github.com/Iotic-Labs/py-IoticBulkData/blob/master/LICENSE
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,7 +14,8 @@
 
 from __future__ import unicode_literals
 
-import os.path
+from os import getpid, kill, path
+from signal import SIGUSR1
 from threading import Thread
 from time import sleep
 import logging
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 from IoticAgent import IOT
 
-from .import_helper import getItemFromModule  # Note: registrar_container/iotic/util/import_helper.py
+from .import_helper import getItemFromModule
 from .Stash import Stash
 
 
@@ -43,7 +44,7 @@ class Runner(object):  # pylint: disable=too-many-instance-attributes
         self.__validate_config()
         #
         self.__agent = IOT.Client(config=self.__agentfile)
-        fname = os.path.join(datapath, name + '.json')
+        fname = path.join(datapath, name + '.json')
         self.__stash = Stash(fname, self.__agent, self.__workers)
         self.__modinst = self.__module(self.__stash, self.__config, self.__stop)
         self.__thread = None
@@ -58,7 +59,7 @@ class Runner(object):  # pylint: disable=too-many-instance-attributes
             msg = "[%s] Config requires agent = /path/to/agent.ini" % self.__name
             logger.error(msg)
             raise ValueError(msg)
-        if not os.path.exists(self.__config['agent']):
+        if not path.exists(self.__config['agent']):
             msg = "[%s] agent = %s file not found" % (self.__name, self.__config['agent'])
             logger.error(msg)
             raise ValueError(msg)  # note: valueerror since nobody cares file not found
@@ -68,7 +69,6 @@ class Runner(object):  # pylint: disable=too-many-instance-attributes
 
     def start(self):
         self.__agent.start()
-        self.__stash.start()
         self.__thread = Thread(target=self.__run, name=('runner-%s' % self.__name))
         self.__thread.start()
 
@@ -76,12 +76,16 @@ class Runner(object):  # pylint: disable=too-many-instance-attributes
         self.__stop.set()
 
     def __run(self):
-        self.__modinst.run()
-        if not self.__stop.is_set():
-            while not self.__stash.queue_empty:
-                logger.info("Runner finished but stop not set!  Draining work queue.")
-                sleep(5)
-        self.__stash.stop()
+        with self.__stash:
+            try:
+                self.__modinst.run()
+            except:
+                logger.critical("Runner died!  Aborting.", exc_info=True)
+                kill(getpid(), SIGUSR1)
+            if not self.__stop.is_set():
+                while not self.__stash.queue_empty:
+                    logger.info("Runner finished but stop not set!  Draining work queue.")
+                    sleep(5)
         self.__agent.stop()
 
     def is_alive(self):

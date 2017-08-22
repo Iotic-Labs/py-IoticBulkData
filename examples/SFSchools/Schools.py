@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://github.com/Iotic-Labs/py-IoticAgent/blob/master/LICENSE
+#     https://github.com/Iotic-Labs/py-IoticBulkData/blob/master/LICENSE
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,7 +20,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s,%(msecs)03d %(levelname)s [%(name)s] {%(threadName)s} %(message)s',
-                    level=logging.INFO)
+                    level=logging.WARNING)
 
 # Iotic imports ---------------------------
 
@@ -29,7 +29,7 @@ from IoticAgent.Core.compat import monotonic
 from IoticAgent.Core.Const import R_FEED
 from IoticAgent.Core.Validation import VALIDATION_META_LABEL, VALIDATION_META_COMMENT
 
-from Ioticiser import SourceBase  # pylint: disable=import-error
+from Ioticiser import SourceBase
 
 
 REFRESH_TIME = 60 * 30
@@ -156,7 +156,7 @@ class SchoolsPublisher(SourceBase):
         trimmed_name = trimmed_name.replace('\n', ' ').replace('\r', '')
         label = trimmed_name[:VALIDATION_META_LABEL].strip()  # todo? ensure length
         thing.set_label(label, LANG)
-        thing.create_tag(['School', 'SanFrancisco', 'OpenData'])
+        thing.create_tag(['School', 'SanFrancisco', 'OpenData', 'cat_school'])
         latitude = school.location[1]
         longitude = school.location[0]
         thing.set_location(float(latitude), float(longitude))

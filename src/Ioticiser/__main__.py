@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://github.com/Iotic-Labs/py-IoticAgent/blob/master/LICENSE
+#     https://github.com/Iotic-Labs/py-IoticBulkData/blob/master/LICENSE
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 from sys import argv, exit, stdin  # pylint: disable=redefined-builtin
 from os import environ, mkdir
 from os.path import exists, isdir, abspath
+from signal import signal, SIGINT, SIGTERM, SIGUSR1
 from time import sleep
 from threading import Thread
 
@@ -59,12 +60,11 @@ def input(input_queue):  # pylint: disable=redefined-builtin
 
 
 def add_input(input_queue):
-    # http://stackoverflow.com/a/19655992
     while True:
         input_queue.put(stdin.read(1))
 
 
-def main():  # pylint: disable=too-many-return-statements,too-many-branches
+def main():  # pylint: disable=too-many-return-statements,too-many-branches,too-many-locals
     if len(argv) < 2:
         if not exists(argv[1]):
             return usage()
@@ -95,35 +95,40 @@ def main():  # pylint: disable=too-many-return-statements,too-many-branches
     for source_name in source_list.strip().split("\n"):
         try:
             runners[source_name] = Runner(source_name, cfg.get(source_name), stop_evt, datapath)
-        except ValueError:
-            logger.error("Runner [%s] failed init.", source_name)
+        except ValueError as e:
+            logger.error("Runner [%s] failed init. Reason [%s]", source_name, str(e))
             return 1
-        except ImportError:
-            logger.error("Runner [%s] failed init.", source_name)
+        except ImportError as e:
+            logger.error("Runner [%s] failed init. Reason [%s]", source_name, str(e))
             return 1
-        except:
-            logger.exception("Runner [%s] failed init.", source_name)
+        except Exception as e:  # pylint: disable=broad-except
+            logger.exception("Runner [%s] failed init. Reason [%s]", source_name, str(e))
             return 1
+
+    def receive_abort_signal(signum, stack):  # pylint: disable=unused-argument
+        if signum == SIGUSR1:
+            logger.critical("Received Abort Signal (SIGUSR1).  Exiting.")
+            stop_evt.set()
+        elif signum == SIGINT or signum == SIGTERM:
+            logger.critical('Shutdown requested')
+            stop_evt.set()
+
+    signal(SIGUSR1, receive_abort_signal)
 
     for name, runner in runners.items():
         logger.info("Runner [%s] Started", name)
         runner.start()
 
     if 'IOTIC_BACKGROUND' in environ:
-        from signal import signal, SIGINT, SIGTERM
-
         logger.info("Started in non-interactive mode.")
 
-        def exit_handler(signum, frame):  # pylint: disable=unused-argument
-            logger.info('Shutdown requested')
-            stop_evt.set()
-
-        signal(SIGINT, exit_handler)
-        signal(SIGTERM, exit_handler)
+        signal(SIGINT, receive_abort_signal)
+        signal(SIGTERM, receive_abort_signal)
 
         while not stop_evt.is_set() or not all_runners_finished(runners):
             stop_evt.wait(timeout=5)
         stop_evt.set()
+
     else:
         input_queue = Queue()
         input_thread = Thread(target=add_input, name="add_input", args=(input_queue,))

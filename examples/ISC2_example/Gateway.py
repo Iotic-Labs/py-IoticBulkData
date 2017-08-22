@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://github.com/Iotic-Labs/py-IoticAgent/blob/master/LICENSE
+#     https://github.com/Iotic-Labs/py-IoticBulkData/blob/master/LICENSE
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s,%(msecs)03d %(levelname)s [%(name)s] {%(threadName)s} %(message)s',
                     level=logging.INFO)
-
+logging.getLogger('IoticAgent.Core.Client').setLevel(logging.WARNING)
 # Iotic imports ---------------------------
 
 from IoticAgent import Datatypes, Units
@@ -52,19 +52,15 @@ class APIRequester(object):
     '''
 
     @classmethod
-    def call_api(cls, fname, apiurl):
-        url = apiurl
+    def call_api(cls, desc, apiurl):
         try:
-            rls = requests.get(url)
+            rls = requests.get(apiurl)
             rls.raise_for_status()
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("__call_api error: %s", str(exc))
-        logger.debug("__call_api name=%s url=%s, status_code=%s", fname, url, rls.status_code)
-        if rls.ok:
+            logger.error("__call_api %s error: %s", desc, exc)
+        else:
             fdata = rls.text
             return json.loads(fdata)
-        else:
-            logger.error("__call_api error %i", rls.status_code)
 
 
 # CLASS GatewayPublisher ----------------------------------------------------------------------------------------------
@@ -117,17 +113,15 @@ class GatewayPublisher(SourceBase):
 
     def __parse_hvac_list_format(self, data):
         """
-            Builds Iotic hvac thing with the information in the json
+            Builds list of ids and names for later
         """
         for json_hvac in data:
             # We need a unique name for the thing
             thing_name = json_hvac[KEY_NAME]
             # store this thing in a dict with its id as key
             self.__things[json_hvac[KEY_ID]] = thing_name
-            # create the thing and set its attributes
-            self.__setup_thing(json_hvac, thing_name)
 
-            logger.info('Created %s', thing_name)
+            logger.info('Stored %s', thing_name)
 
     def __parse_hvac_reading_format(self, reading):
         """
@@ -143,25 +137,20 @@ class GatewayPublisher(SourceBase):
 
     # Setup meta data for thing and feeds -----------------------------------------------------------------------------
 
-    def __setup_thing(self, hvac, thing_name):
+    def __share_thing_feed(self, reading, thing_name):
         """
-            Sets Thing's label, description
+            Sets Thing's label & description
+            Creates point and values and shares in background
             Keeps Thing private
         """
         # create a thing in the stash and fill in metadata
         with self._stash.create_thing(thing_name) as thing:
-            thing.set_label(hvac[KEY_NAME], LANG)
-            thing.set_description("Heating ventilation and air conditioning system" + hvac[KEY_NAME], LANG)
+            thing.set_label(thing_name, LANG)
+            thing.set_description("Heating ventilation and air conditioning system " + thing_name, LANG)
             thing.create_tag(['hvac', 'heating', 'ventilation', 'aircon'])
+
             thing.set_public(public=False)
 
-    def __share_thing_feed(self, reading, thing_name):
-        """
-            Creates, defines and publish thing's feed
-            Uses two hvacs values as feed: temp and power
-        """
-        # get the thing back from the stash and use it to create a feed and share.
-        with self._stash.create_thing(thing_name) as thing:
             feed = thing.create_feed("Readings")
             feed.set_label("Readings from HVAC " + str(reading[KEY_ID]), LANG)
             feed.create_value(KEY_ID,
@@ -179,8 +168,8 @@ class GatewayPublisher(SourceBase):
                               unit=Units.CELSIUS,
                               data=reading[KEY_TEMP])
 
-            feed.set_recent_config(max_samples=-1)  # don't store recent data as it updates every 10 seconds
-            feed.share()
+            feed.set_recent_config(max_samples=0)  # don't store recent data as it updates every 15 seconds
+            # feed.share()
 
     # RUN public method  ----------------------------------------------------------------------------------------------
 

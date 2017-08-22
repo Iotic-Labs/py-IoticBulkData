@@ -19,6 +19,7 @@ The application conects with a localhost API and get all the data in JSON format
 4. Adds one Feed to each Thing to share readings data
 5. Every 10 seconds, hit all of the /readings/{id} api and publish the data for that feed
 
+`note` Max amount of requests is set by the API, if you want to get unlimited number of requests you have to use the *Application Token*. For more information visit https://dev.socrata.com/docs/app-tokens.html
 
 ## Dependencies
 

@@ -4,7 +4,7 @@
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
 #
-#     https://github.com/Iotic-Labs/py-IoticAgent/blob/master/LICENSE
+#     https://github.com/Iotic-Labs/py-IoticBulkData/blob/master/LICENSE
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,7 +23,7 @@ from IoticAgent.Core.Const import R_FEED, R_CONTROL
 from .ResourceBase import ResourceBase
 from .Point import Point
 from .const import PUBLIC, LOCATION
-from .const import FOC, LABELS, DESCRIPTIONS, TAGS, VALUES
+from .const import FOC, LABELS, DESCRIPTIONS, TAGS, VALUES, RECENT
 
 
 class Thing(ResourceBase):
@@ -39,18 +39,22 @@ class Thing(ResourceBase):
         self.__public = Validation.bool_check_convert('public', public)  # Note: bool(None) == False
         self.__lat = None
         self.__long = None
-        if lat is not None and long is not None:
+        if lat is not None or long is not None:
             Validation.location_check(lat, long)
             self.__lat = lat
             self.__long = long
         self.__points = {}
-        if points is not None and len(points):
+        if points is not None:
             for pid, pdata in points.items():
+                point_tags = []  # Migrate stash where point[tags] was not stored in empty case
+                if TAGS in pdata:
+                    point_tags = pdata[TAGS]
                 self.__points[pid] = Point(pdata[FOC], pid,
                                            labels=pdata[LABELS],
                                            descriptions=pdata[DESCRIPTIONS],
-                                           tags=pdata[TAGS],
-                                           values=pdata[VALUES])
+                                           tags=point_tags,
+                                           values=pdata[VALUES],
+                                           max_samples=pdata[RECENT])
 
     def __enter__(self):
         self.lock.acquire()
@@ -64,17 +68,18 @@ class Thing(ResourceBase):
             except:
                 logger.exception("BUG! Thing __exit__ crashed on finalise_thing attempt")
 
-    def apply_changes(self):
+    def clear_changes(self):
         with self.lock:
             for pid in self.__points:
-                self.__points[pid].apply_changes()
-            self.__new = False
+                self.__points[pid].clear_changes()
+            self._set_not_new()
             self._changes = []
 
     def set_public(self, public=True):
         with self.lock:
             res = Validation.bool_check_convert('public', public)
             if res != self.__public and PUBLIC not in self._changes:
+                logger.debug('adding public %s -> %s', repr(self.__public), repr(res))
                 self._changes.append(PUBLIC)
             self.__public = res
 
@@ -89,8 +94,8 @@ class Thing(ResourceBase):
             if self.__lat != lat or self.__long != long:
                 if LOCATION not in self._changes:
                     self._changes.append(LOCATION)
-            self.__lat = lat
-            self.__long = long
+                self.__lat = lat
+                self.__long = long
 
     @property
     def location(self):

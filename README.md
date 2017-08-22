@@ -55,10 +55,9 @@ Download or clone the code from the repo.
 
 #### Dependencies
 
-To run the Ioticiser you'll need these two dependencies
+To run the Ioticiser you'll need the py-IoticAgent
 
-2. [IoticAgent](https://pypi.python.org/pypi/py-IoticAgent/0.4.1)
-1. [rdflib](https://pypi.python.org/pypi/rdflib)
+    1. [IoticAgent](https://pypi.python.org/pypi/py-IoticAgent/)
 
 It's up to you how you install these and set your PYTHONPATH to access them.  I did from the root of this repo by
 using the requirements.txt file to install the dependencies in the 3rd directory...
@@ -212,20 +211,46 @@ so it won't delete them for you.
 ### APPENDIX 1
 #### The Stash API
 
-The stash API is a lighter mimic of the IOT api in the Iotic Agent.
-The reason it exists is that you can create things and feeds in the stash and when you release your stash thing,
+The stash API is a lighter mimic of the IOT api in the Iotic Agent. [Documentation](https://iotic-labs.github.io/py-IoticAgent/)
+
+The reason it exists is that you can create things and feeds /in the stash/ and when you release your stash thing,
 the Ioticiser will go away and make your changes real in Iotic Space, allowing you to continue processing the API.
+
+#### Key differences between Stash API and Agent API
+
+##### Implicit vs Explicit Point.share()
+
+The Stash API adds kwarg data to Point.create_value.  These are stashed and finally shared as a dictionary.  To add a *specific* time to the values the share function can be called with time only.
+Calling the share function is optional when create_value(data=) is used *and* you're happy to share with datetime.utcnow().
+
+```python
+    feed.create_value("value", vtype=Datatypes.INTEGER, description="random number",
+                      data=random.randint(0, 10))
+    feed.share(time=reading['time'])
+```
+
+```python
+    feed.create_value("value", vtype=Datatypes.INTEGER, description="random number")
+    feed.share(data={"value": random.randint(0, 10)}))
+```
+
+more details on create value and share are [here](#create-values-on-a-feed-and-share-data)
+
+
+##### No Follow/Attach
+
+Feed Follow and Control Attach are not currently supported by the Stash API.
+
 
 ##### Create a `Thing`
 
 ###### Parameters
 ```python
-   create_thing(lid, apply_diff=True):
+   create_thing(lid):
 ```
 |parameter|type|optional|comment|
 |---|---|---|---|
 |`lid`|string|no|Local Id of your thing|
-|`apply_diff`|boolean|yes|If you call create_thing for the same lid twice do you want to apply any changes that might be pending before returning you the thing `apply_diff=True` , or do you want to lose them `apply_diff=False`|
 
 ###### Returns
 a `Stash.Thing` instance
@@ -279,7 +304,7 @@ These functions allow easy setting of metadata for the things you create.  `set_
 |`taglist`|list of strings|no|List of tags for your thing, feed, etc. Each tag has min 3, max 16 chars no embedded spaces|
 |`lat`|float|no|Latitude of your thing in WGS84 coordinates|
 |`long`|float|no|Longitude of your thing in WGS84 coordinates|
-|`lang`|float|yes|2-char language code, e.g. "de".  If `lang=None` then use the container default language (recommended)|
+|`lang`|string|yes|2-char language code, e.g. "de".  If `lang=None` then use the container default language (recommended)|
 
 ###### Returns
 None of these functions return anything
@@ -291,6 +316,75 @@ None of these functions return anything
     thing.set_location(lat, lon)
     thing.create_tag(['School', 'SanFrancisco', 'OpenData'])
 ```
+
+##### Create Values on a `feed` and share data
+These functions allow you to set metadata for individual data points in a feed. Once these Value functions have
+been called, you can call share, but it's not necessary if you've passed data to the `create_value()` function and
+are happy to share with the current time
+###### create_value() Parameters
+```python
+    create_value(label,
+                 vtype=TYPE,
+                 lang=LANG,
+                 description=DESC,
+                 unit=UNIT,
+                 data=DATA)
+```
+|parameter|type|optional|comment|
+|---|---|---|---|
+|`label`|string|no|Name of the value (used as the json key)|
+|`vtype`|string|no|value type from Datatypes.py, e.g. Datatypes.DECIMAL|
+|`lang`|string|yes|2-char language code, e.g. "de".  If `lang=None` then use the container default language (recommended)|
+|`description`|string|no|Text description of the value e.g. "External temperature"|
+|`unit`|url|no|unit of the value from Units.py e.g. Units.CELSIUS - or (advanced) the correct URI from a units ontology e.g. "http://purl.obolibrary.org/obo/UO_0000301" is micrograms per liter|
+|`data`|n/a|no|the data to share for this value (or use share(data=xxx))|
+
+###### share() Parameters
+
+It's only necessary to call `share()` if
+- you want a different timestamp from the current time - for example if your data has a reading time which is different from now.
+- you want to share some data, but you didn't use the `data=` keyword argument in the `create_value()` call
+
+In cases such as the example below, the data for the `power` value is assigned in the call, and you're happy to share
+with time of datetime.utcnow() (the default), then there's no need to call share at all, it'll be done for you.
+
+`note` If you call share with no aguments, it will raise a ValueError
+
+```python
+    share(time=TIME
+          data=DATA)
+```
+|parameter|type|optional|comment|
+|---|---|---|---|
+|`time`|timestamp|yes|Name of the value (used as the json key)|
+|`data`|n/a|yes|the data to share for this *value*|
+
+
+###### Examples
+Implicit share
+
+```python
+    feed.create_value('power',
+                      vtype=Datatypes.INT,
+                      description='Power consumption in Watts',
+                      unit=Units.WATT,
+                      data=reading['power'])
+```
+
+Explicit share
+```python
+    feed.create_value('power',
+                      vtype=Datatypes.INT,
+                      description='Power consumption in Watts',
+                      unit=Units.WATT)
+    feed.share(data={'power': reading['power']})
+```
+
+
+
+###### Returns
+Neither of these functions return anything
+
 
 ##### Store a key-value pair
 These 2 functions allow you to store a key-value pair in your stash persistently - i.e. they will be available in
