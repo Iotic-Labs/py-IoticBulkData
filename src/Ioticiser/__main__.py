@@ -24,12 +24,13 @@ logger = logging.getLogger(__name__)
 from sys import argv, exit, stdin  # pylint: disable=redefined-builtin
 from os import environ, mkdir
 from os.path import exists, isdir, abspath
-from signal import signal, SIGINT, SIGTERM, SIGUSR1
+from signal import signal, SIGINT, SIGTERM
 from time import sleep
 from threading import Thread
 
 from IoticAgent.Core.compat import Event, Queue
 
+from .compat import SIGUSR1
 from .Config import Config
 from .Runner import Runner
 

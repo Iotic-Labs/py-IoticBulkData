@@ -15,7 +15,6 @@
 from __future__ import unicode_literals
 
 from os import getpid, kill, path
-from signal import SIGUSR1
 from threading import Thread
 from time import sleep
 import logging
@@ -23,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 from IoticAgent import IOT
 
+from .compat import SIGUSR1
 from .import_helper import getItemFromModule
 from .Stash import Stash
 

@@ -15,7 +15,6 @@
 from __future__ import unicode_literals
 
 from os import getpid, kill
-from signal import SIGUSR1
 from threading import Thread, local as thread_local
 from datetime import datetime
 from collections import namedtuple, deque
@@ -27,6 +26,7 @@ from IoticAgent.Core.Const import R_FEED, R_CONTROL
 from IoticAgent.Core.Exceptions import LinkException
 from IoticAgent.IOT.Exceptions import IOTAccessDenied
 
+from ..compat import SIGUSR1
 from .const import FOC, PUBLIC, TAGS, LOCATION, POINTS, THING, RECENT
 from .const import LABELS, DESCRIPTIONS, VALUES
 from .const import DESCRIPTION, VTYPE, LANG, UNIT, SHAREDATA, SHARETIME
