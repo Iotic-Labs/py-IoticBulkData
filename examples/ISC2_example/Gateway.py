@@ -58,6 +58,7 @@ class APIRequester(object):
             rls.raise_for_status()
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("__call_api %s error: %s", desc, exc)
+            return []
         else:
             fdata = rls.text
             return json.loads(fdata)
@@ -187,4 +188,4 @@ class GatewayPublisher(SourceBase):
                         self.__get_hvac_reading_from_API(hvac[KEY_ID])
                 self._stop.wait(timeout=5)
         else:
-            logger.critical("no HVACs found")
+            logger.critical("no HVACs found - is the REST API running?")
