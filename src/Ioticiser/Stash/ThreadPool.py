@@ -155,7 +155,7 @@ class ThreadPool(object):  # pylint: disable=too-many-instance-attributes
 
     @property
     def queue_empty(self):
-        return self.__queue.empty()
+        return self.__queue.empty
 
     def __worker(self):
         logger.debug("Starting")
