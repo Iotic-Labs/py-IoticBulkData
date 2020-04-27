@@ -18,6 +18,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from IoticAgent.Core.Validation import Validation
+from IoticAgent.Core.Const import R_FEED
 
 from .ResourceBase import ResourceBase
 from .const import VALUE, VALUESHARE, VTYPE, LANG, DESCRIPTION, UNIT, SHARETIME, SHAREDATA, RECENT
@@ -32,6 +33,7 @@ class Point(ResourceBase):
         self.__foc = foc
         self.__pid = pid
         self.__values = {} if values is None else values
+        # These only apply to feeds
         self.__sharetime = None
         self.__sharedata = None
         self.__max_samples = max_samples
@@ -88,6 +90,8 @@ class Point(ResourceBase):
             return self.__values
 
     def share(self, data=None, time=None):
+        if self.__foc != R_FEED:
+            raise ValueError('share only applies to feeds')
         if data is None and time is None:
             raise ValueError("kwarg data or time required.")
         with self.lock:
@@ -102,15 +106,21 @@ class Point(ResourceBase):
 
     @property
     def sharetime(self):
+        if self.__foc != R_FEED:
+            raise ValueError('sharetime only applies to feeds')
         with self.lock:
             return self.__sharetime
 
     @property
     def sharedata(self):
+        if self.__foc != R_FEED:
+            raise ValueError('sharedata only applies to feeds')
         with self.lock:
             return self.__sharedata
 
     def set_recent_config(self, max_samples=0):
+        if self.__foc != R_FEED:
+            raise ValueError('Recent config only applies to feeds')
         with self.lock:
             if max_samples != self.__max_samples:
                 self.__max_samples = max_samples

@@ -20,7 +20,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s,%(msecs)03d %(levelname)s [%(name)s] {%(threadName)s} %(message)s',
-                    level=logging.WARNING)
+                    level=logging.INFO)
 
 # Iotic imports ---------------------------
 
@@ -50,13 +50,14 @@ class APIRequester(object):
             rls = requests.get(url)
             rls.raise_for_status()
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("__call_api error: %s", str(exc))
+            logger.warning("__call_api failed: %s", str(exc))
         logger.debug("__call_api name=%s url=%s, status_code=%s", fname, url, rls.status_code)
         if rls.ok:
             fdata = rls.text
             return json.loads(fdata)
-        else:
-            logger.error("__call_api error %i", rls.status_code)
+
+        logger.debug("__call_api status_code %i", rls.status_code)
+        return None
 
 
 # CLASS School ---------------------------------------------------------------------------------------------
@@ -129,7 +130,7 @@ class SchoolsPublisher(SourceBase):
 
         if 'app_key' not in self._config:
             msg = "No app_key set, the conexion will be limited by SF open data"
-            logger.error(msg)
+            logger.warning(msg)
             self.__use_app_key = False
         if 'format_limit_things' in self._config:
             self.__limit = int(self._config['format_limit_things'])
@@ -198,7 +199,6 @@ class SchoolsPublisher(SourceBase):
                            data=school.upper_age)
 
         point.set_recent_config(max_samples=-1)
-        point.share()
 
     def __parse_sfopendata_schools_format(self, data):
         """
@@ -219,7 +219,7 @@ class SchoolsPublisher(SourceBase):
                 self._set_thing_description(school, thing)
                 self._set_thing_points(school, thing)
 
-            logger.info('Created ' + thing_name)
+            logger.info('Created %s', thing_name)
 
     # RUN ---------------------------------------------------------------------------------------------------
 

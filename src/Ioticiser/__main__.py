@@ -65,7 +65,7 @@ def add_input(input_queue):
         input_queue.put(stdin.read(1))
 
 
-def main():  # pylint: disable=too-many-return-statements,too-many-branches,too-many-locals
+def main():  # pylint: disable=too-many-return-statements,too-many-branches,too-many-locals,too-many-statements
     if len(argv) < 2:
         if not exists(argv[1]):
             return usage()
@@ -110,7 +110,8 @@ def main():  # pylint: disable=too-many-return-statements,too-many-branches,too-
         if signum == SIGUSR1:
             logger.critical("Received Abort Signal (SIGUSR1).  Exiting.")
             stop_evt.set()
-        elif signum == SIGINT or signum == SIGTERM:
+        # elif signum == SIGINT or signum == SIGTERM:
+        elif signum in(SIGINT, SIGTERM):
             logger.critical('Shutdown requested')
             stop_evt.set()
 

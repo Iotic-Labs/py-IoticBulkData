@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(format='%(asctime)s,%(msecs)03d %(levelname)s [%(name)s] {%(threadName)s} %(message)s',
                     level=logging.INFO)
-logging.getLogger('IoticAgent.Core.Client').setLevel(logging.WARNING)
+logging.getLogger('IoticAgent.Core.Client').setLevel(logging.INFO)
 # Iotic imports ---------------------------
 
 from IoticAgent import Datatypes, Units
@@ -103,7 +103,7 @@ class GatewayPublisher(SourceBase):
         data = APIRequester.call_api('Dummy HVAC List API', self.__hvac_url + "list")
         if data is not None:
             self.__parse_hvac_list_format(data)
-            return data
+        return data
 
     def __get_hvac_reading_from_API(self, hvac_id):
         data = APIRequester.call_api('Dummy HVAC Reading API', self.__hvac_url + "reading/" + str(hvac_id))
@@ -177,7 +177,8 @@ class GatewayPublisher(SourceBase):
     def run(self):
         # get the list of hvacs
         self.__hvac_list = self.__get_hvac_list_from_API()
-        if len(self.__hvac_list) > 0:
+        # if len(self.__hvac_list) > 0:
+        if self.__hvac_list:
             lasttime = 0
             while not self._stop.is_set():
                 nowtime = monotonic()

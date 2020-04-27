@@ -14,8 +14,9 @@
 
 from os import name
 
+
 if name == 'nt':
     # Use SIGTERM on Windows until proper IPC can be arranged
-    from signal import SIGTERM as SIGUSR1
+    from signal import SIGTERM as SIGUSR1  # noqa pylint: disable=unused-import
 else:
-    from signal import SIGUSR1
+    from signal import SIGUSR1  # noqa pylint: disable=unused-import

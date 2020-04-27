@@ -28,3 +28,17 @@ class SourceBase(object):
         """Entry point for the Source
         """
         raise NotImplementedError
+
+    def control_callback(self, thing, control, msg):
+        """Override to handle control request callbacks. `thing` & `control` are Stash object instances associated with
+        the control. `msg` has the same format as IoticAgent.IOT's control callback. Note that this callback will not be
+        triggered for unknown (to the stash/runner) controls.
+        To confirm a "tell" request, one can use self._stash.confirm_tell (in the same fashion as for IoticAgent.IOT).
+        """
+        pass
+
+    def control_callback_parsed(self, thing, control, msg):
+        """See `control_callback`. This callback is only triggered if the incoming control request data could be parsed
+        according to its metadata definition.
+        """
+        pass

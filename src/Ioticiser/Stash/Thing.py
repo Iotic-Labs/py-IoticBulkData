@@ -104,9 +104,16 @@ class Thing(ResourceBase):
 
     def create_point(self, foc, pid):
         with self.lock:
-            if pid not in self.__points:
-                self.__points[pid] = Point(foc, pid, new=True)
-            return self.__points[pid]
+            try:
+                point = self._get_point(foc, pid)
+            except KeyError:
+                self.__points[pid] = point = Point(foc, pid, new=True)
+            return point
+
+    # raises KeyError if Point unknown.
+    def _get_point(self, foc, pid):  # pylint:disable=unused-argument
+        # TODO - currently cannot distinguish between feeds and controls in Stash!
+        return self.__points[pid]
 
     def create_feed(self, pid):
         return self.create_point(R_FEED, pid)

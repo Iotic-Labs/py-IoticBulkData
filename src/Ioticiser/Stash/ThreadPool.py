@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 from IoticAgent.Core.compat import Queue, Empty, Event, Lock, string_types
 from IoticAgent.Core.Const import R_FEED, R_CONTROL
 from IoticAgent.Core.Exceptions import LinkException
-from IoticAgent.IOT.Exceptions import IOTAccessDenied
+from IoticAgent.IOT.Exceptions import IOTAccessDenied, IOTSyncTimeout
 
 from ..compat import SIGUSR1
 from .const import FOC, PUBLIC, TAGS, LOCATION, POINTS, THING, RECENT
@@ -32,12 +32,13 @@ from .const import LABELS, DESCRIPTIONS, VALUES
 from .const import DESCRIPTION, VTYPE, LANG, UNIT, SHAREDATA, SHARETIME
 
 
-DEBUG_ENABLED = logger.getEffectiveLevel() == logging.DEBUG
+_NO_OP_FUNC = lambda *args, **kwargs: None  # noqa
+
+DEBUG_ENABLED = logger.isEnabledFor(logging.DEBUG)
 
 
 class Message(namedtuple('nt_Message', 'lid idx diff complete_cb')):
     """Represent an individual queue message to handle"""
-    pass
 
 
 class LidSerialisedQueue(object):
@@ -60,6 +61,9 @@ class LidSerialisedQueue(object):
     @property
     def empty(self):
         return not self.__lid_mapping and self.__queue.empty()
+
+    def qsize(self):
+        return self.__queue.qsize()
 
     def put(self, qmsg):
         if not isinstance(qmsg, Message):
@@ -143,6 +147,9 @@ class ThreadPool(object):  # pylint: disable=too-many-instance-attributes
             for thread in self.__threads:
                 thread.start()
 
+    def qsize(self):
+        return self.__queue.qsize()
+
     def submit(self, lid, idx, diff, complete_cb=None):
         self.__queue.put(Message(lid, idx, diff, complete_cb))
 
@@ -177,13 +184,17 @@ class ThreadPool(object):  # pylint: disable=too-many-instance-attributes
                     logger.warning("Network error, will retry lid '%s'", qmsg.lid)
                     self.__stop.wait(timeout=1)
                     continue
+                except IOTSyncTimeout:
+                    logger.warning("Sync Timeout for lid '%s'", qmsg.lid)
+                    self.__stop.wait(timeout=5)
+                    continue
                 except IOTAccessDenied:
                     logger.critical("IOTAccessDenied - Local limit exceeded - Aborting")
                     kill(getpid(), SIGUSR1)
                     return
                 except:
                     logger.error("Failed to process thing changes (Uncaught exception)  - Aborting",
-                                 exc_info=DEBUG_ENABLED)
+                                 exc_info=True)
                     kill(getpid(), SIGUSR1)
                     return
                 break
@@ -216,7 +227,8 @@ class ThreadPool(object):  # pylint: disable=too-many-instance-attributes
 
         thingmeta = None
         for chg, val in diff.items():
-            if chg == TAGS and len(val):
+            # if chg == TAGS and len(val):
+            if chg == TAGS and val:
                 iotthing.create_tag(val)
             elif chg == LABELS and val:
                 if thingmeta is None:
@@ -241,21 +253,25 @@ class ThreadPool(object):  # pylint: disable=too-many-instance-attributes
         if PUBLIC in diff and diff[PUBLIC] is True:
             iotthing.set_public(True)
 
-    def __handle_point_changes(self, iotthing, lid, pid, pdiff):  # pylint: disable=too-many-branches
+    def __handle_point_changes(self, iotthing, lid, pid, pdiff):  # pylint: disable=too-many-branches,too-many-locals
         if pid not in self.__cache[lid][POINTS]:
             if pdiff[FOC] == R_FEED:
                 iotpoint = iotthing.create_feed(pid)
             elif pdiff[FOC] == R_CONTROL:
-                iotpoint = iotthing.create_control(pid)
+                # Catch-all callbacks are used to propagate control requests rather than individual ones
+                iotpoint = iotthing.create_control(pid, _NO_OP_FUNC)
             self.__cache[lid][POINTS][pid] = iotpoint
         iotpoint = self.__cache[lid][POINTS][pid]
         pointmeta = None
 
         for chg, val in pdiff.items():
-            if chg == TAGS and len(val):
+            # if chg == TAGS and len(val):
+            if chg == TAGS and val:
                 iotpoint.create_tag(val)
             elif chg == RECENT:
-                iotpoint.set_recent_config(max_samples=pdiff[RECENT])
+                # Since all point types share the same class & stash space, manually check
+                if pdiff[FOC] == R_FEED:
+                    iotpoint.set_recent_config(max_samples=pdiff[RECENT])
             elif chg == LABELS and val:
                 if pointmeta is None:
                     pointmeta = iotpoint.get_meta()
@@ -285,7 +301,8 @@ class ThreadPool(object):  # pylint: disable=too-many-instance-attributes
                     logger.warning("Failed to make datetime from time string '%s' !Will use None!", sharetime)
                     sharetime = None
 
-        if len(sharedata):
+        # if len(sharedata):
+        if sharedata:
             iotpoint.share(data=sharedata, time=sharetime)
 
         if SHAREDATA in pdiff:

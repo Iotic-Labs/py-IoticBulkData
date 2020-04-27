@@ -21,10 +21,12 @@ import logging
 logger = logging.getLogger(__name__)
 
 from IoticAgent import IOT
+from IoticAgent.Core.Const import P_LID, P_ENTITY_LID, R_CONTROL
 
 from .compat import SIGUSR1
 from .import_helper import getItemFromModule
 from .Stash import Stash
+from .SourceBase import SourceBase
 
 
 class Runner(object):  # pylint: disable=too-many-instance-attributes
@@ -37,7 +39,6 @@ class Runner(object):  # pylint: disable=too-many-instance-attributes
         self.__stop = stop
         self.__datapath = datapath
         #
-        self.__module = None
         self.__agentfile = None
         self.__workers = 1
         #
@@ -46,7 +47,7 @@ class Runner(object):  # pylint: disable=too-many-instance-attributes
         self.__agent = IOT.Client(config=self.__agentfile)
         fname = path.join(datapath, name + '.json')
         self.__stash = Stash(fname, self.__agent, self.__workers)
-        self.__modinst = self.__module(self.__stash, self.__config, self.__stop)
+        self.__modinst = self.__load_configure_module_instance()
         self.__thread = None
 
     def __validate_config(self):
@@ -54,7 +55,6 @@ class Runner(object):  # pylint: disable=too-many-instance-attributes
             msg = "[%s] Config requires import = module.name" % self.__name
             logger.error(msg)
             raise ValueError(msg)
-        self.__module = getItemFromModule(self.__config['import'])
         if 'agent' not in self.__config:
             msg = "[%s] Config requires agent = /path/to/agent.ini" % self.__name
             logger.error(msg)
@@ -66,6 +66,29 @@ class Runner(object):  # pylint: disable=too-many-instance-attributes
         self.__agentfile = self.__config['agent']
         if 'workers' in self.__config:
             self.__workers = int(self.__config['workers'])
+
+    # To be called AFTER __validate_config
+    def __load_configure_module_instance(self):
+        module = getItemFromModule(self.__config['import'])
+        if not issubclass(module, SourceBase):
+            raise TypeError("Expecting subclass of SourceBase, got %s" % type(module))
+
+        modinst = module(self.__stash, self.__config, self.__stop)
+        self.__agent.register_catchall_controlreq(self.__cb_control, callback_parsed=self.__cb_control_parsed)
+        return modinst
+
+    def __cb_control(self, msg, parsed=False):
+        thing, control = self.__stash._get_thing_and_point(msg[P_ENTITY_LID], R_CONTROL, msg[P_LID])
+        if thing:
+            if parsed:
+                self.__modinst.control_callback_parsed(thing, control, msg)
+            else:
+                self.__modinst.control_callback(thing, control, msg)
+        else:
+            logger.warning('Ignoring unknown (by stash) thing/control: %s / %s', msg[P_ENTITY_LID], msg[P_LID])
+
+    def __cb_control_parsed(self, msg):
+        self.__cb_control(msg, parsed=True)
 
     def start(self):
         self.__agent.start()

@@ -95,10 +95,10 @@ class Random(SourceBase):  # pylint: disable=too-many-instance-attributes
         logger.info("Finished")
 
     def __create_thing(self):
-        t_feed_generator = self._stash.create_thing("Test feed generator")
-        t_feed_generator.set_label("Test feed generator", lang=LANG)
-        t_feed_generator.set_description("Generates Wave forms for testing", lang=LANG)
-        t_feed_generator.create_tag(["test", "feed", "generator"])
+        t_feed_generator = self._stash.create_thing("Random feed generator")
+        t_feed_generator.set_label("Random feed generator", lang=LANG)
+        t_feed_generator.set_description("Bulk source example Random.", lang=LANG)
+        t_feed_generator.create_tag(["test", "random", "bulk", "feed", "generator"])
         return t_feed_generator
 
     def __create_random_number(self):

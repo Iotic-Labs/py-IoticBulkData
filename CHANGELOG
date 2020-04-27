@@ -1,3 +1,7 @@
+0.2.0
+- Add control callback
+- Bug fixes & stability improvements
+
 0.1.0
 - Bug fixes & stability improvements
 - Switch stash serialisation format

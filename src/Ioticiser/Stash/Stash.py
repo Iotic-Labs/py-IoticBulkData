@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 from os import rename
 from os.path import split as path_split, splitext, exists
 from threading import Thread
-from copy import deepcopy
 from hashlib import md5
 from gzip import open as gzip_open
 import json
@@ -31,10 +30,13 @@ from IoticAgent.Core.compat import RLock, Event, number_types, string_types
 from .Thing import Thing
 from .ThreadPool import ThreadPool
 from .const import THINGS, DIFF, DIFFCOUNT
-from .const import LID, PID, FOC, PUBLIC, TAGS, LOCATION, POINTS, LAT, LONG, VALUES
+from .const import LID, PID, FOC, PUBLIC, TAGS, LOCATION, POINTS, VALUES
 from .const import LABEL, LABELS, DESCRIPTION, DESCRIPTIONS, RECENT
 from .const import VALUE, VALUESHARE, VTYPE, LANG, UNIT, SHAREDATA, SHARETIME
 
+
+STATS_IN = 'sin'
+STATS_OUT = 'sout'
 
 SAVETIME = 120
 
@@ -49,12 +51,20 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
         self.__fname = fname
         self.__name = self.__fname_to_name(fname)
         self.__workers = ThreadPool(self.__name, num_workers=num_workers, iotclient=iotclient)
+        # For immediate actions only (e.g. control confirm)
+        self.__client = iotclient
         self.__thread = Thread(target=self.__run, name=('stash-%s' % self.__name))
         self.__stop = Event()
 
         self.__stash = None
         self.__stash_lock = RLock()
         self.__stash_hash = None
+
+        # Count stats in memory between SAVETIME ticks for heartbeat logging
+        self.__stats = {
+            STATS_IN: 0,
+            STATS_OUT: 0
+        }
 
         self.__pname = splitext(self.__fname)[0] + '_props.json'
         self.__properties = None
@@ -91,7 +101,7 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
                 # Migrate from json to ubjson
                 with self.__stash_lock:
                     with open(self.__fname, 'r') as f:
-                        self.__stash = json.loads(f.read())
+                        self.__stash = json.load(f)
                     rename(self.__fname, self.__fname + '.old')
 
         if fsplit[1] != '.ubjz':
@@ -100,7 +110,7 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
         if exists(self.__fname):
             with self.__stash_lock:
                 with gzip_open(self.__fname, 'rb') as f:
-                    self.__stash = ubjson.loadb(f.read())
+                    self.__stash = ubjson.load(f, intern_object_keys=True)
         elif self.__stash is None:
             self.__stash = {THINGS: {},    # Current/last state of Things
                             DIFF: {},      # Diffs not yet updated in Iotic Space
@@ -111,29 +121,7 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
         else:
             with self.__stash_lock:
                 with open(self.__pname, 'r') as f:
-                    self.__properties = json.loads(f.read())
-
-        with self.__stash_lock:
-            stash_copy = deepcopy(self.__stash)
-            self.__stash = {}
-            # Migrate built-in keys
-            for key, value in stash_copy.items():
-                if key in [THINGS, DIFF, DIFFCOUNT]:
-                    logger.debug("--> Migrating built-in %s", key)
-                    self.__stash[key] = stash_copy[key]
-            # Migrate bad keys
-            for key, value in stash_copy.items():
-                if key not in [THINGS, DIFF, DIFFCOUNT]:
-                    if key not in stash_copy[THINGS]:
-                        logger.info("--> Migrating key to THINGS %s", key)
-                        self.__stash[THINGS][key] = value
-                        self.__stash.pop(key, None)
-            # Remove redundant LAT/LONG (LOCATION used instead)
-            for el, et in self.__stash[THINGS].items():  # pylint: disable=unused-variable
-                et.pop(LAT, None)
-                et.pop(LONG, None)
-
-        self.__save()
+                    self.__properties = json.load(f)
 
     def __calc_stashdump(self):
         with self.__stash_lock:
@@ -146,13 +134,21 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
                 return stashdump
             return None
 
+    def __do_heartbeat(self):
+        with self.__stash_lock:
+            logger.info("heartbeat: Submitted=%i, Completed=%i, Queued=%i",
+                        self.__stats[STATS_IN], self.__stats[STATS_OUT], self.__workers.qsize())
+            self.__stats[STATS_IN] = self.__stats[STATS_OUT] = 0
+
     def __save(self):
         stashdump = self.__calc_stashdump()
+        self.__do_heartbeat()
         if stashdump is not None:
             with gzip_open(self.__fname, 'wb') as f:
                 f.write(stashdump)
 
-        if len(self.__properties) and self.__properties_changed:
+        # if len(self.__properties) and self.__properties_changed:
+        if self.__properties and self.__properties_changed:
             with self.__stash_lock:
                 with open(self.__pname, 'w') as f:
                     json.dump(self.__properties, f)
@@ -172,7 +168,8 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
             if value is None and key in self.__properties:
                 del self.__properties[key]
             if value is not None:
-                if isinstance(value, string_types) or isinstance(value, number_types):
+                # if isinstance(value, string_types) or isinstance(value, number_types):
+                if isinstance(value, (number_types, string_types)):
                     if key not in self.__properties or self.__properties[key] != value:
                         self.__properties_changed = True
                         self.__properties[key] = value
@@ -186,21 +183,33 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
             self.__stop.wait(timeout=SAVETIME)
 
     def create_thing(self, lid):
-        if lid in self.__stash[THINGS]:
-            thing = Thing(lid,
-                          stash=self,
-                          public=self.__stash[THINGS][lid][PUBLIC],
-                          labels=self.__stash[THINGS][lid][LABELS],
-                          descriptions=self.__stash[THINGS][lid][DESCRIPTIONS],
-                          tags=self.__stash[THINGS][lid][TAGS],
-                          points=self.__stash[THINGS][lid][POINTS],
-                          lat=self.__stash[THINGS][lid][LOCATION][0],
-                          long=self.__stash[THINGS][lid][LOCATION][1])
-            return thing
-        return Thing(lid, new=True, stash=self)
+        try:
+            return self.__get_thing(lid)
+        except KeyError:
+            return Thing(lid, new=True, stash=self)
+
+    # raises KeyError if thing does not exist
+    def __get_thing(self, lid):
+        return Thing(lid,
+                     stash=self,
+                     public=self.__stash[THINGS][lid][PUBLIC],
+                     labels=self.__stash[THINGS][lid][LABELS],
+                     descriptions=self.__stash[THINGS][lid][DESCRIPTIONS],
+                     tags=self.__stash[THINGS][lid][TAGS],
+                     points=self.__stash[THINGS][lid][POINTS],
+                     lat=self.__stash[THINGS][lid][LOCATION][0],
+                     long=self.__stash[THINGS][lid][LOCATION][1])
+
+    # For internal use only - returns tuple of thing & point instances, or None for both if either unknown
+    def _get_thing_and_point(self, lid, foc, pid):
+        try:
+            thing = self.__get_thing(lid)
+            return thing, thing._get_point(foc, pid)
+        except KeyError:
+            return None, None
 
     def __calc_diff(self, thing):  # pylint: disable=too-many-branches
-        if not len(thing.changes):
+        if not (len(thing.changes) or thing.new):
             changes = 0
             for pid, point in thing.points.items():
                 changes += len(point.changes)
@@ -254,13 +263,14 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
             self.__stash[DIFFCOUNT] += 1
         return ret, diff
 
-    def __calc_diff_point(self, point):
+    def __calc_diff_point(self, point):  # pylint: disable=too-many-branches
         ret = {PID: point.lid,
                FOC: point.foc,
                VALUES: {}}
         if point.new:
             ret.update({LABELS: {},
                         DESCRIPTIONS: {},
+                        # currently only applies to feeds
                         RECENT: 0,
                         TAGS: []})
         for change in point.changes:
@@ -312,6 +322,7 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
             for idx, diff in self.__stash[DIFF].items():
                 logger.info("Resubmitting diff for thing %s", diff[LID])
                 self.__workers.submit(diff[LID], idx, diff, self.__complete_cb)
+                self.__stats[STATS_IN] += 1
 
     def _finalise_thing(self, thing):
         with thing.lock:
@@ -319,6 +330,7 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
             if idx is not None:
                 self.__workers.submit(diff[LID], idx, diff, self.__complete_cb)
                 thing.clear_changes()
+                self.__stats[STATS_IN] += 1
 
     def __complete_cb(self, lid, idx):
         with self.__stash_lock:
@@ -375,7 +387,11 @@ class Stash(object):  # pylint: disable=too-many-instance-attributes
                         point[VALUES][label] = value
 
             del self.__stash[DIFF][idx]
+            self.__stats[STATS_OUT] += 1
 
     @property
     def queue_empty(self):
         return self.__workers.queue_empty
+
+    def confirm_tell(self, data, success):
+        self.__client.confirm_tell(data, success)
